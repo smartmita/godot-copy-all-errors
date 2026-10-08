@@ -13,6 +13,7 @@ A simple Godot 4.x editor plugin that adds a **"Copy All"** button to the Debugg
 - Includes child details (stack trace, error codes, etc.)
 - Button shows a brief "Copied N items!" flash feedback
 - Works with both English and Chinese editor locales
+- Supports multiple debugging sessions, each with its own Copy All button
 
 ## Installation
 
@@ -36,6 +37,10 @@ A simple Godot 4.x editor plugin that adds a **"Copy All"** button to the Debugg
 3. Click the **复制全部** (Copy All) button next to "Collapse All".
 4. Paste the copied content anywhere — issue trackers, chat, AI assistants, etc.
 
+When running multiple instances, select the desired debugger session and click its
+**Copy All** button. Each button copies only that session's errors and warnings.
+Buttons are also added to sessions started after the plugin is enabled.
+
 ### Example Output
 
 ```
@@ -52,6 +57,20 @@ W 0:00:03:012   AnotherScript.gd:10 — UNUSED_VARIABLE
 
 - **Godot 4.0+** (tested on 4.5 / 4.6.1)
 - Works on Windows, macOS, and Linux
+
+## Regression test
+
+With Python 3.9+ and a Godot editor installed, run:
+
+```sh
+python tests/run_multi_session.py --godot /path/to/godot
+```
+
+This creates a temporary project and connects three real headless game processes.
+It checks per-session copy output, sessions added later, stop/reconnect, plugin
+disable/re-enable, and button cleanup. The test records text at the clipboard
+boundary without changing the system clipboard. It uses the editor's configured
+language; English and Simplified Chinese are supported.
 
 ## License
 
