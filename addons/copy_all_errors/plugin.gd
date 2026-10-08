@@ -4,12 +4,41 @@ extends EditorPlugin
 ## 在调试器的「错误」面板中注入一个「复制全部」按钮，
 ## 点击后将所有错误/警告信息格式化并复制到系统剪贴板。
 
+# gdlint: disable=max-line-length
+const _STRINGS = {
+    "en": {
+        "button_text": "Copy All",
+        "button_tooltip": "Copy all errors/warnings to clipboard",
+        "warn_panel_not_found": "[CopyAllErrors] Could not find debugger error panel, plugin initialization failed.",
+        "msg_plugin_ready": "[CopyAllErrors] Plugin ready, 'Copy All' button injected into error panel.",
+        "warn_tree_invalid": "[CopyAllErrors] Error list control invalid.",
+        "msg_no_content": "Nothing to copy",
+        "msg_copied_log": "[CopyAllErrors] Copied %d messages to clipboard.",
+        "msg_copied_button": "Copied %d items!"
+    },
+    "zh": {
+        "button_text": "复制全部",
+        "button_tooltip": "复制所有错误/警告信息到剪贴板",
+        "warn_panel_not_found": "[CopyAllErrors] 未找到调试器错误面板，插件初始化失败。",
+        "msg_plugin_ready": "[CopyAllErrors] 插件已就绪，「复制全部」按钮已注入错误面板。",
+        "warn_tree_invalid": "[CopyAllErrors] 错误列表控件无效。",
+        "msg_no_content": "没有内容",
+        "msg_copied_log": "[CopyAllErrors] 已复制 %d 条消息到剪贴板。",
+        "msg_copied_button": "已复制 %d 条!"
+    }
+}
+# gdlint: enable=max-line-length
+
+const _MAX_RETRIES := 20
+
 var _copy_button: Button = null
 var _error_tree: Tree = null
 var _hbox: HBoxContainer = null
 var _setup_timer: Timer = null
 var _retry_count := 0
-const _MAX_RETRIES := 20
+
+var _cached_locale: String = ""
+var _detected_ui_is_english := true
 
 
 func _enter_tree() -> void:
@@ -23,12 +52,56 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	_cached_locale = ""
 	if is_instance_valid(_copy_button):
 		_copy_button.queue_free()
 	_copy_button = null
 	_error_tree = null
 	_hbox = null
 	_cleanup_timer()
+
+
+# ────────────────── 国际化 ──────────────────
+
+
+func _get_locale() -> String:
+	# 已缓存则直接返回
+	if not _cached_locale.is_empty():
+		return _cached_locale
+
+	# 获取可用翻译键
+	var available_locales := _STRINGS.keys()
+
+	# Godot 4.6+ 提供此方法；动态调用避免旧版在解析时失败。
+	var editor_lang := ""
+	if EditorInterface.has_method("get_editor_language"):
+		editor_lang = EditorInterface.call("get_editor_language")
+
+	if not editor_lang.is_empty():
+		# 精确匹配
+		if editor_lang in available_locales:
+			_cached_locale = editor_lang
+		else:
+			# 前缀匹配 (如 "zh_CN" 匹配 "zh")
+			for loc in available_locales:
+				if editor_lang.begins_with(loc + "_"):
+					_cached_locale = loc
+					break
+			# 无匹配则默认英语
+			if _cached_locale.is_empty():
+				_cached_locale = "en"
+	else:
+		# 回退：基于按钮文本检测
+		_cached_locale = "en" if _detected_ui_is_english else "zh"
+
+	return _cached_locale
+
+
+func _tr(key: String) -> String:
+	var locale := _get_locale()
+	if _STRINGS.has(locale) and _STRINGS[locale].has(key):
+		return _STRINGS[locale][key]
+	return _STRINGS["en"].get(key, key)
 
 
 # ────────────────── 初始化 ──────────────────
@@ -56,7 +129,7 @@ func _schedule_retry() -> void:
 	if _retry_count < _MAX_RETRIES and is_instance_valid(_setup_timer):
 		_setup_timer.start()
 	else:
-		push_warning("[CopyAllErrors] 未找到调试器错误面板，插件初始化失败。")
+		push_warning(_tr("warn_panel_not_found"))
 		_cleanup_timer()
 
 
@@ -89,6 +162,7 @@ func _find_error_panel(node: Node) -> Dictionary:
 					if btn is Button and btn.text in ["Expand All", "全部展开"]:
 						has_expand_btn = true
 						hbox = child
+						_detected_ui_is_english = (btn.text == "Expand All")
 						break
 			elif child is Tree and tree == null:
 				tree = child
@@ -108,11 +182,11 @@ func _find_error_panel(node: Node) -> Dictionary:
 
 func _inject_copy_button() -> void:
 	_copy_button = Button.new()
-	_copy_button.text = "复制全部"
-	_copy_button.tooltip_text = "复制所有错误/警告信息到剪贴板"
+	_copy_button.text = _tr("button_text")
+	_copy_button.tooltip_text = _tr("button_tooltip")
 	_copy_button.pressed.connect(_on_copy_all_pressed)
 
-	# 尝试加上复制图标，好看一点
+	# 尝试加上复制图标
 	var theme := EditorInterface.get_editor_theme()
 	if theme:
 		for icon_name in ["ActionCopy", "CopyNodePath", "Duplicate"]:
@@ -132,7 +206,7 @@ func _inject_copy_button() -> void:
 	if insert_idx < _hbox.get_child_count():
 		_hbox.move_child(_copy_button, insert_idx)
 
-	print("[CopyAllErrors] 插件已就绪，「复制全部」按钮已注入错误面板。")
+	print(_tr("msg_plugin_ready"))
 
 
 # ────────────────── 复制逻辑 ──────────────────
@@ -140,12 +214,12 @@ func _inject_copy_button() -> void:
 
 func _on_copy_all_pressed() -> void:
 	if not is_instance_valid(_error_tree):
-		push_warning("[CopyAllErrors] 错误列表控件无效。")
+		push_warning(_tr("warn_tree_invalid"))
 		return
 
 	var root := _error_tree.get_root()
 	if not root or not root.get_first_child():
-		_flash_button("没有内容")
+		_flash_button(_tr("msg_no_content"))
 		return
 
 	var entries: PackedStringArray = []
@@ -159,8 +233,8 @@ func _on_copy_all_pressed() -> void:
 
 	var output := "\n\n".join(entries).strip_edges()
 	DisplayServer.clipboard_set(output)
-	print("[CopyAllErrors] 已复制 %d 条消息到剪贴板。" % count)
-	_flash_button("已复制 %d 条!" % count)
+	print(_tr("msg_copied_log") % count)
+	_flash_button(_tr("msg_copied_button") % count)
 
 
 func _flash_button(msg: String) -> void:
@@ -208,7 +282,8 @@ func _format_error_item(item: TreeItem) -> String:
 
 
 func _get_type_char(item: TreeItem) -> String:
-	# 优先从 TreeItem 的 metadata 判断（Godot 内部存储了 "warning" / "error" / "cycled_error"）
+	# 优先从 TreeItem 的 metadata 判断
+	# (Godot 内部存储了 "warning" / "error" / "cycled_error")
 	var meta = item.get_metadata(0)
 	if meta is String:
 		if meta == "warning":
