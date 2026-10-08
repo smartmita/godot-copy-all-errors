@@ -72,10 +72,10 @@ func _get_locale() -> String:
 	# 获取可用翻译键
 	var available_locales := _STRINGS.keys()
 
-	# 优先使用 get_editor_language()
+	# Godot 4.6+ 提供此方法；动态调用避免旧版在解析时失败。
 	var editor_lang := ""
-	if EditorInterface:
-		editor_lang = EditorInterface.get_editor_language()
+	if EditorInterface.has_method("get_editor_language"):
+		editor_lang = EditorInterface.call("get_editor_language")
 
 	if not editor_lang.is_empty():
 		# 精确匹配
