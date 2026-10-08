@@ -1,0 +1,11 @@
+config_version=5
+
+[application]
+config/name="Copy All Errors regression"
+run/main_scene="res://main.tscn"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+
+[editor_plugins]
+enabled=PackedStringArray("res://addons/copy_all_errors/plugin.cfg", "res://addons/regression/plugin.cfg")

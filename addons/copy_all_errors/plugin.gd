@@ -31,9 +31,16 @@ const _STRINGS = {
 
 const _MAX_RETRIES := 20
 
-var _copy_button: Button = null
-var _error_tree: Tree = null
-var _hbox: HBoxContainer = null
+
+class SessionWatcher extends EditorDebuggerPlugin:
+	signal session_added
+
+	func _setup_session(_session_id: int) -> void:
+		session_added.emit()
+
+
+var _panels: Dictionary = {}
+var _session_watcher: SessionWatcher = null
 var _setup_timer: Timer = null
 var _retry_count := 0
 
@@ -48,17 +55,21 @@ func _enter_tree() -> void:
 	_setup_timer.one_shot = true
 	_setup_timer.timeout.connect(_try_setup)
 	add_child(_setup_timer)
-	_setup_timer.start()
+	_session_watcher = SessionWatcher.new()
+	_session_watcher.session_added.connect(_schedule_setup)
+	add_debugger_plugin(_session_watcher)
+	_schedule_setup()
 
 
 func _exit_tree() -> void:
 	_cached_locale = ""
-	if is_instance_valid(_copy_button):
-		_copy_button.queue_free()
-	_copy_button = null
-	_error_tree = null
-	_hbox = null
+	if _session_watcher != null:
+		_session_watcher.session_added.disconnect(_schedule_setup)
+		remove_debugger_plugin(_session_watcher)
+		_session_watcher = null
 	_cleanup_timer()
+	for id in _panels.keys():
+		_remove_panel(id)
 
 
 # ────────────────── 国际化 ──────────────────
@@ -107,21 +118,28 @@ func _tr(key: String) -> String:
 # ────────────────── 初始化 ──────────────────
 
 
+func _schedule_setup() -> void:
+	_retry_count = 0
+	if is_instance_valid(_setup_timer):
+		_setup_timer.start()
+
+
 func _try_setup() -> void:
 	var base := EditorInterface.get_base_control()
 	if not base:
 		_schedule_retry()
 		return
 
-	var result := _find_error_panel(base)
-	if result.is_empty():
+	var results: Array[Dictionary] = []
+	_find_error_panels(base, results)
+	if results.is_empty():
 		_schedule_retry()
 		return
 
-	_error_tree = result["tree"]
-	_hbox = result["hbox"]
-	_inject_copy_button()
-	_cleanup_timer()
+	for result in results:
+		var tree: Tree = result["tree"]
+		if not _panels.has(tree.get_instance_id()):
+			_inject_copy_button(result["hbox"], tree)
 
 
 func _schedule_retry() -> void:
@@ -130,7 +148,7 @@ func _schedule_retry() -> void:
 		_setup_timer.start()
 	else:
 		push_warning(_tr("warn_panel_not_found"))
-		_cleanup_timer()
+		# 保留单次定时器，后续新会话仍可触发查找；不持续轮询。
 
 
 func _cleanup_timer() -> void:
@@ -142,7 +160,7 @@ func _cleanup_timer() -> void:
 # ────────────────── 查找错误面板 ──────────────────
 
 
-func _find_error_panel(node: Node) -> Dictionary:
+func _find_error_panels(node: Node, results: Array[Dictionary]) -> void:
 	# 目标结构（Godot 源码 script_editor_debugger.cpp）：
 	# VBoxContainer ("Errors" / "错误")
 	#   ├─ HBoxContainer
@@ -168,58 +186,80 @@ func _find_error_panel(node: Node) -> Dictionary:
 				tree = child
 
 		if has_expand_btn and tree != null and hbox != null:
-			return {"tree": tree, "hbox": hbox}
+			results.append({"tree": tree, "hbox": hbox})
+			return
 
 	for child in node.get_children():
-		var result := _find_error_panel(child)
-		if not result.is_empty():
-			return result
-	return {}
+		_find_error_panels(child, results)
 
 
 # ────────────────── 注入按钮 ──────────────────
 
 
-func _inject_copy_button() -> void:
-	_copy_button = Button.new()
-	_copy_button.text = _tr("button_text")
-	_copy_button.tooltip_text = _tr("button_tooltip")
-	_copy_button.pressed.connect(_on_copy_all_pressed)
+func _inject_copy_button(hbox: HBoxContainer, tree: Tree) -> void:
+	var button := Button.new()
+	button.text = _tr("button_text")
+	button.tooltip_text = _tr("button_tooltip")
+	button.pressed.connect(_on_copy_all_pressed.bind(tree, button))
+	# 定时器随按钮销毁，避免禁用插件后仍回调已释放的按钮。
+	var feedback_timer := Timer.new()
+	feedback_timer.name = "CopyFeedback"
+	feedback_timer.wait_time = 1.5
+	feedback_timer.one_shot = true
+	feedback_timer.timeout.connect(_reset_button_text.bind(button))
+	button.add_child(feedback_timer)
 
 	# 尝试加上复制图标
 	var theme := EditorInterface.get_editor_theme()
 	if theme:
 		for icon_name in ["ActionCopy", "CopyNodePath", "Duplicate"]:
 			if theme.has_icon(icon_name, "EditorIcons"):
-				_copy_button.icon = theme.get_icon(icon_name, "EditorIcons")
+				button.icon = theme.get_icon(icon_name, "EditorIcons")
 				break
 
 	# 插入到「全部折叠」按钮后面
-	var insert_idx := _hbox.get_child_count()
-	for i in _hbox.get_child_count():
-		var child := _hbox.get_child(i)
+	var insert_idx := hbox.get_child_count()
+	for i in hbox.get_child_count():
+		var child := hbox.get_child(i)
 		if child is Button and child.text in ["Collapse All", "全部折叠"]:
 			insert_idx = i + 1
 			break
 
-	_hbox.add_child(_copy_button)
-	if insert_idx < _hbox.get_child_count():
-		_hbox.move_child(_copy_button, insert_idx)
+	hbox.add_child(button)
+	if insert_idx < hbox.get_child_count():
+		hbox.move_child(button, insert_idx)
+	var id := tree.get_instance_id()
+	_panels[id] = {"tree": tree, "button": button}
+	tree.tree_exiting.connect(_remove_panel.bind(id))
 
 	print(_tr("msg_plugin_ready"))
+
+
+func _remove_panel(id: int) -> void:
+	if not _panels.has(id):
+		return
+	var panel: Dictionary = _panels[id]
+	_panels.erase(id)
+	var tree: Tree = panel["tree"]
+	var callback := _remove_panel.bind(id)
+	if is_instance_valid(tree) and tree.tree_exiting.is_connected(callback):
+		tree.tree_exiting.disconnect(callback)
+	var button: Button = panel["button"]
+	if is_instance_valid(button):
+		button.queue_free()
 
 
 # ────────────────── 复制逻辑 ──────────────────
 
 
-func _on_copy_all_pressed() -> void:
-	if not is_instance_valid(_error_tree):
+func _on_copy_all_pressed(tree: Tree, button: Button) -> void:
+	if not is_instance_valid(tree):
 		push_warning(_tr("warn_tree_invalid"))
 		return
 
-	var root := _error_tree.get_root()
+	var root := tree.get_root()
 	if not root or not root.get_first_child():
-		_flash_button(_tr("msg_no_content"))
+		_flash_button(button, _tr("msg_no_content"))
 		return
 
 	var entries: PackedStringArray = []
@@ -232,20 +272,25 @@ func _on_copy_all_pressed() -> void:
 		item = item.get_next()
 
 	var output := "\n\n".join(entries).strip_edges()
-	DisplayServer.clipboard_set(output)
+	_copy_to_clipboard(output)
 	print(_tr("msg_copied_log") % count)
-	_flash_button(_tr("msg_copied_button") % count)
+	_flash_button(button, _tr("msg_copied_button") % count)
 
 
-func _flash_button(msg: String) -> void:
-	if not is_instance_valid(_copy_button):
+func _copy_to_clipboard(text: String) -> void:
+	DisplayServer.clipboard_set(text)
+
+
+func _flash_button(button: Button, msg: String) -> void:
+	if not is_instance_valid(button):
 		return
-	var original_text := _copy_button.text
-	_copy_button.text = msg
-	get_tree().create_timer(1.5).timeout.connect(func():
-		if is_instance_valid(_copy_button):
-			_copy_button.text = original_text
-	)
+	button.text = msg
+	button.get_node("CopyFeedback").start()
+
+
+func _reset_button_text(button: Button) -> void:
+	if is_instance_valid(button):
+		button.text = _tr("button_text")
 
 
 # ────────────────── 格式化 ──────────────────
