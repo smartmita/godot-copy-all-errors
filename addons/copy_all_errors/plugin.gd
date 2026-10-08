@@ -140,6 +140,9 @@ func _try_setup() -> void:
 		var tree: Tree = result["tree"]
 		if not _panels.has(tree.get_instance_id()):
 			_inject_copy_button(result["hbox"], tree)
+	# 已找到旧面板并不代表刚通知的新会话面板也已就绪。
+	if results.size() < _session_watcher.get_sessions().size():
+		_schedule_retry()
 
 
 func _schedule_retry() -> void:

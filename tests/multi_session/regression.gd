@@ -30,7 +30,12 @@ func _run() -> void:
 	await get_tree().create_timer(1.0).timeout
 	_plugin = _find_plugin(get_tree().root)
 	_clients.append(_launch_client())
-	await _wait_for(func(): return _active_count() == 1 and _panels().size() == 1, "first session")
+	# A released ephemeral port may be taken before Godot binds it. Tell the
+	# runner to retry startup on a fresh port if our first client cannot connect.
+	await _wait_for(func(): return _active_count() == 1, "first connection", 75)
+	if _failed:
+		return
+	await _wait_for(func(): return _panels().size() == 1, "first session messages")
 	if _failed:
 		return
 	# The second and third processes connect after initial plugin setup has ended.
@@ -48,6 +53,9 @@ func _run() -> void:
 	OS.kill(_clients[0])
 	await _wait_for(func(): return _active_count() == 2, "stopped session")
 	# Stopped sessions still expose their retained error lists for copying.
+	if _panels().size() != 3 or not _has_pid(_clients[0]):
+		_fail("stopped session lost its retained errors")
+		return
 	if not await _verify_copying():
 		return
 	_clients[0] = _launch_client()
@@ -112,11 +120,11 @@ func _active_count() -> int:
 	return count
 
 
-func _wait_for(predicate: Callable, description: String) -> void:
+func _wait_for(predicate: Callable, description: String, exit_code := 1) -> void:
 	var deadline := Time.get_ticks_msec() + 15000
 	while not predicate.call() and not _failed:
 		if Time.get_ticks_msec() > deadline:
-			_fail("timed out waiting for " + description)
+			_fail("timed out waiting for " + description, exit_code)
 			return
 		await get_tree().create_timer(0.1).timeout
 
@@ -143,7 +151,8 @@ func _verify_copying() -> bool:
 			_fail("copy omitted this session's warning or error")
 			return false
 		for other in panels:
-			if other != panel and output.contains(other["marker"]):
+			var other_error: String = other["marker"].replace("SESSION_SENTINEL_", "SESSION_ERROR_")
+			if other != panel and (output.contains(other["marker"]) or output.contains(other_error)):
 				_fail("copy mixed messages from different sessions")
 				return false
 		for other_index in range(index + 1, panels.size()):
@@ -184,7 +193,7 @@ func _panels() -> Array[Dictionary]:
 
 func _has_pid(pid: int) -> bool:
 	for panel in _panels():
-		if panel["marker"] == "SESSION_SENTINEL_%d" % pid:
+		if panel["marker"] == "SESSION_SENTINEL_%d_END" % pid:
 			return true
 	return false
 
@@ -200,9 +209,9 @@ func _find_plugin(node: Node) -> EditorPlugin:
 	return null
 
 
-func _fail(message: String) -> void:
+func _fail(message: String, exit_code := 1) -> void:
 	_failed = true
 	print("MULTI_SESSION diagnostic active=", _active_count(), " panels=", _panels().size())
 	push_error("MULTI_SESSION_FAIL: " + message)
 	EditorInterface.stop_playing_scene()
-	get_tree().quit(1)
+	get_tree().quit(exit_code)
