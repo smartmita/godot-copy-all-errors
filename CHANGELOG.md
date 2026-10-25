@@ -15,11 +15,13 @@ This patch includes the fixes merged since the original Asset Library submission
 
 - Set the plugin version to 1.0.1.
 - Include the MIT license and installation/release notes inside `addons/copy_all_errors`, so they remain in Asset Library archives and installed projects.
+- Correct the documented minimum Godot version to 4.2, which provides the `EditorInterface` singleton used by the existing implementation.
 
 ### Validation
 
 - The merged multi-session integration test covers three real game processes, isolated errors and warnings, late connections, stop/reconnect, repeated copy, plugin disable/re-enable, cleanup, and empty-list feedback.
 - PR #4 records passing runs on Godot 4.5 and 4.7.2 with English and Simplified Chinese editor settings.
+- Release preparation reran the integration test successfully on official Godot 4.2.2 and 4.7.2.
 
 ## 1.0.0 - 2026-03-08
 

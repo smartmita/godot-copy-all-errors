@@ -1,6 +1,6 @@
 # Copy All Errors 1.0.1
 
-A Godot 4.x editor plugin that adds a **Copy All** button to each Debugger Errors panel.
+A Godot 4.2+ editor plugin that adds a **Copy All** button to each Debugger Errors panel.
 Each button copies only that session's errors and warnings, including stack traces and other child details.
 Button text and feedback support English and Chinese editor locales.
 
@@ -19,7 +19,7 @@ When updating an existing installation, stop debugging and disable the plugin be
 - Godot 4.5-compatible editor language detection and English/Chinese text.
 - License and installation notes included in the distributed plugin directory.
 
-The merged multi-session regression was tested on Godot 4.5 and 4.7.2 with English and Simplified Chinese editor settings.
+Requires Godot 4.2 or later. Release preparation passed the multi-session regression on official Godot 4.2.2 and 4.7.2. PR #4 also records Godot 4.5 and 4.7.2 runs with English and Simplified Chinese editor settings.
 
 Source, full changelog, and regression test instructions:
 https://github.com/smartmita/godot-copy-all-errors

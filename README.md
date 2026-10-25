@@ -57,7 +57,7 @@ W 0:00:03:012   AnotherScript.gd:10 — UNUSED_VARIABLE
 
 ## Compatibility
 
-- **Godot 4.0+** (multi-session regression tested on 4.5 / 4.7.2)
+- **Godot 4.2+** (multi-session regression tested on 4.2.2 / 4.5 / 4.7.2)
 - Works on Windows, macOS, and Linux
 
 ## Regression test
