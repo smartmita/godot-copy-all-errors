@@ -5,6 +5,8 @@ A simple Godot 4.x editor plugin that adds a **"Copy All"** button to the Debugg
 ![Godot 4.x](https://img.shields.io/badge/Godot-4.x-blue?logo=godotengine&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
+Current release: **1.0.1**. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## Features
 
 - Injects a **Copy All** (复制全部) button into the built-in Errors panel toolbar
@@ -55,7 +57,7 @@ W 0:00:03:012   AnotherScript.gd:10 — UNUSED_VARIABLE
 
 ## Compatibility
 
-- **Godot 4.0+** (tested on 4.5 / 4.6.1)
+- **Godot 4.0+** (multi-session regression tested on 4.5 / 4.7.2)
 - Works on Windows, macOS, and Linux
 
 ## Regression test
